@@ -328,18 +328,18 @@ type KubeletConfiguration struct {
 	// +optional
 	StreamingConnectionIdleTimeout metav1.Duration `json:"streamingConnectionIdleTimeout,omitempty"`
 	// nodeStatusUpdateFrequency is the frequency that kubelet computes node
-	// status. If node lease feature is not enabled, it is also the frequency that
-	// kubelet posts node status to master.
-	// Note: When node lease feature is not enabled, be cautious when changing the
-	// constant, it must work with nodeMonitorGracePeriod in nodecontroller.
+	// status and checks if an update to the API server is necessary. Status
+	// is posted to the API server either when it changes or when
+	// nodeStatusReportFrequency has elapsed since the last report.
 	// Default: "10s"
 	// +optional
 	NodeStatusUpdateFrequency metav1.Duration `json:"nodeStatusUpdateFrequency,omitempty"`
 	// nodeStatusReportFrequency is the frequency that kubelet posts node
-	// status to master if node status does not change. Kubelet will ignore this
-	// frequency and post node status immediately if any change is detected. It is
-	// only used when node lease feature is enabled. nodeStatusReportFrequency's
-	// default value is 5m. But if nodeStatusUpdateFrequency is set explicitly,
+	// status to the API server if node status does not change. Kubelet will
+	// ignore this frequency and post node status immediately if any change
+	// is detected.
+	// nodeStatusReportFrequency's default value is 5m. But if
+	// nodeStatusUpdateFrequency is set explicitly,
 	// nodeStatusReportFrequency's default value will be set to
 	// nodeStatusUpdateFrequency for backward compatibility.
 	// Default: "5m"
@@ -772,6 +772,12 @@ type KubeletConfiguration struct {
 	// Default: []
 	// +optional
 	AllowedUnsafeSysctls []string `json:"allowedUnsafeSysctls,omitempty"`
+	// DefaultPodSysctls is a set of default sysctls that will be applied to all pods.
+	// It can be overridden by sysctls set in pod spec.securityContext.sysctls.
+	// Support namespaced groups: `kernel.shm*`, `kernel.msg*`, `kernel.sem`, `fs.mqueue.*`, `net.*`, `kernel.domainname`, and `user.*`.
+	// For example: {"net.ipv4.ip_forward": "1", "kernel.shmall": "1048576"}
+	// +optional
+	DefaultPodSysctls map[string]string `json:"defaultPodSysctls,omitempty"`
 	// volumePluginDir is the full path of the directory in which to search
 	// for additional third party volume plugins.
 	// Default: "/usr/libexec/kubernetes/kubelet-plugins/volume/exec/"
@@ -893,9 +899,9 @@ type KubeletConfiguration struct {
 	// MemoryThrottlingFactor specifies the factor multiplied by the memory limit or node allocatable memory
 	// when setting the cgroupv2 memory.high value to enforce MemoryQoS.
 	// Decreasing this factor will set lower high limit for container cgroups and put heavier reclaim pressure
-	// while increasing will put less reclaim pressure.
+	// while increasing will put less reclaim pressure. If nil, memory.high is not set.
 	// See https://kep.k8s.io/2570 for more details.
-	// Default: 0.9
+	// Default: nil
 	// +featureGate=MemoryQoS
 	// +optional
 	MemoryThrottlingFactor *float64 `json:"memoryThrottlingFactor,omitempty"`

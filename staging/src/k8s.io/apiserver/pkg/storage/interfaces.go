@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -34,8 +35,14 @@ import (
 // Feature is the name of each feature in storage that we check in feature_support_checker.
 type Feature = string
 
-// RequestWatchProgress is an etcd feature that may use to check if it supported or not.
+// RequestWatchProgress is an etcd feature for progress notification requests.
+// Default: false.
 var RequestWatchProgress Feature = "RequestWatchProgress"
+
+// RangeStream is an etcd feature (etcd 3.7+) for the streaming list RPC.
+// Default: true. MarkUnsupported flips it to false on an Unimplemented response,
+// reverting to true after a recheck interval.
+var RangeStream Feature = "RangeStream"
 
 // Versioner abstracts setting and retrieving metadata fields from database response
 // onto the object ot list. It is required to maintain storage invariants - updating an
@@ -330,6 +337,25 @@ type ListOptions struct {
 	// event containing a ResourceVersion after which the server
 	// continues streaming events.
 	SendInitialEvents *bool
+	// RecordTimestamps requests that the storage layer wrap each emitted watch
+	// object in a WatchEventWithRecordTime carrying its decode timestamp, for dispatch
+	// latency telemetry. This is intended for internal clients only (the watch
+	// cache); external clients cannot set it. The watch cache strips the wrapper
+	// before storing or serializing the object, so it never reaches other watchers.
+	RecordTimestamps bool
+}
+
+// WatchEventWithRecordTime wraps a runtime.Object with the timestamp at which the
+// storage layer decoded the corresponding watch event. It is produced by the
+// storage layer only when ListOptions.RecordTimestamps is set, and is consumed
+// and stripped by the watch cache before the underlying object is stored or
+// serialized. It is never sent to watch clients.
+type WatchEventWithRecordTime interface {
+	runtime.Object
+	// RecordTime returns the decode timestamp of the wrapped event.
+	RecordTime() time.Time
+	// Unwrap returns the underlying object.
+	Unwrap() runtime.Object
 }
 
 // DeleteOptions provides the options that may be provided for storage delete operations.

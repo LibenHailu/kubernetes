@@ -409,8 +409,8 @@ function codegen::defaults() {
 # The <VALUE> depends on context:
 #     on packages:
 #       *: all exported types are candidates for having validation generated
-#       FIELDNAME: any type with a field of this name is a candidate for
-#                  having validation generated
+#       TypesWithField=NAME: any type with a field of this name is a
+#           candidate for having validation generated
 #     on types:
 #       true:  always generate validation for this type
 #       false: never generate validation for this type
@@ -449,7 +449,6 @@ function codegen::validation() {
     # used, but not regenerated, unless they are also listed as a "regular"
     # input on the command-line.
     local readonly_pkgs=(
-        k8s.io/apimachinery/pkg/apis/meta/v1
         k8s.io/apimachinery/pkg/api/resource
         k8s.io/apimachinery/pkg/runtime
         k8s.io/apimachinery/pkg/types

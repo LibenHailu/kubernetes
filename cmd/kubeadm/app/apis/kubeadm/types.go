@@ -22,7 +22,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	bootstraptokenv1 "k8s.io/kubernetes/cmd/kubeadm/app/apis/bootstraptoken/v1"
-	"k8s.io/kubernetes/cmd/kubeadm/app/features"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -185,9 +184,6 @@ type APIServer struct {
 
 	// CertSANs sets extra Subject Alternative Names for the API Server signing cert.
 	CertSANs []string
-
-	// TimeoutForControlPlane controls the timeout that we use for API server to appear
-	TimeoutForControlPlane *metav1.Duration
 }
 
 // DNS defines the DNS addon that should be used in the cluster
@@ -406,9 +402,6 @@ type Discovery struct {
 	// If .BootstrapToken is set, this field is defaulted to .BootstrapToken.Token, but can be overridden.
 	// If .File is set, this field **must be set** in case the KubeConfigFile does not contain any other authentication information
 	TLSBootstrapToken string
-
-	// Timeout modifies the discovery timeout
-	Timeout *metav1.Duration
 }
 
 // BootstrapTokenDiscovery is used to set the options for bootstrap token based discovery
@@ -451,20 +444,6 @@ func (cfg *ClusterConfiguration) GetControlPlaneImageRepository() string {
 		return cfg.CIImageRepository
 	}
 	return cfg.ImageRepository
-}
-
-// EncryptionAlgorithmType returns the type of encryption keys used in the cluster.
-func (cfg *ClusterConfiguration) EncryptionAlgorithmType() EncryptionAlgorithmType {
-	// If the feature gate is set to true, or false respect it.
-	// If the feature gate is not set, use the EncryptionAlgorithm field (v1beta4).
-	// TODO: remove this function when the feature gate is removed.
-	if enabled, ok := cfg.FeatureGates[features.PublicKeysECDSA]; ok {
-		if enabled {
-			return EncryptionAlgorithmECDSAP256
-		}
-		return EncryptionAlgorithmRSA2048
-	}
-	return cfg.EncryptionAlgorithm
 }
 
 // HostPathMount contains elements describing volumes that are mounted from the
@@ -723,10 +702,27 @@ const (
 // ComponentConfigMap is a map between a group name (as in GVK group) and a ComponentConfig
 type ComponentConfigMap map[string]ComponentConfig
 
+// ArgMergeMethod defines the method used to merge an argument with the same name.
+type ArgMergeMethod string
+
+const (
+	// ArgMergeMethodAppend appends the new value to the existing argument.
+	ArgMergeMethodAppend ArgMergeMethod = "append"
+	// ArgMergeMethodPrepend prepends the new value to the existing argument.
+	ArgMergeMethodPrepend ArgMergeMethod = "prepend"
+)
+
 // Arg represents an argument with a name and a value.
+// MergeMethod defines how to merge this argument with an existing base argument
+// with the same name. If no merge method is specified the default is to replace
+// the existing base argument. If multiple override arguments with the same name
+// exist and have a defined merge method, the last one will be used.
+// If a merge method is defined on an override argument but there is no matching
+// base argument, the override argument will be ignored.
 type Arg struct {
-	Name  string
-	Value string
+	Name        string
+	Value       string
+	MergeMethod ArgMergeMethod
 }
 
 // EnvVar represents an environment variable present in a Container.

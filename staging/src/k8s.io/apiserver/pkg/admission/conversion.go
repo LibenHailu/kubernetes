@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apiserver/pkg/cel/common"
 )
 
 // VersionedAttributes is a wrapper around the original admission attributes, adding versioned
@@ -106,7 +107,12 @@ func NewVersionedAttributes(attr Attributes, gvk schema.GroupVersionKind, o Obje
 // LazyObject encapsulates a versioned runtime.Object and its lazily-evaluated Common Expression Language (CEL) representation.
 type LazyObject struct {
 	object runtime.Object
-	celVal ref.Val
+	// UseSchemalessTypeRef indicates whether to use SchemalessTypedToVal (reflection-based lazy ref.Val)
+	// instead of converting to an unstructured representation with DefaultTypeAdapter.
+	//
+	// Deprecated: This field is temporary and will be removed when schemaless becomes the default.
+	UseSchemalessTypeRef bool
+	celVal               ref.Val
 }
 
 // NewLazyObject returns a new LazyObject wrapping the provided runtime.Object.
@@ -131,12 +137,21 @@ func (l *LazyObject) CELValue() (ref.Val, error) {
 	if l.object == nil {
 		return nil, nil
 	}
-	// TODO: Eventually use TypedToVal instead of unstructured object conversion.
-	unstructuredObj, err := ConvertObjectToUnstructured(l.object)
+	if u, ok := l.object.(*unstructured.Unstructured); ok {
+		l.celVal = types.DefaultTypeAdapter.NativeToValue(u.Object)
+		return l.celVal, nil
+	}
+	// TODO: use SchemalessTypeRef always.
+	if l.UseSchemalessTypeRef {
+		l.celVal = common.SchemalessTypedToVal(l.object)
+		return l.celVal, nil
+	}
+
+	u, err := ConvertObjectToUnstructured(l.object)
 	if err != nil {
 		return nil, err
 	}
-	l.celVal = types.DefaultTypeAdapter.NativeToValue(unstructuredObj.Object)
+	l.celVal = types.DefaultTypeAdapter.NativeToValue(u.Object)
 	return l.celVal, nil
 }
 

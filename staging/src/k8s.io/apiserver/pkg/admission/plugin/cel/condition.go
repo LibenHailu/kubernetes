@@ -18,7 +18,6 @@ package cel
 
 import (
 	"context"
-	"reflect"
 
 	admissionv1 "k8s.io/api/admission/v1"
 	authenticationv1 "k8s.io/api/authentication/v1"
@@ -61,17 +60,6 @@ func NewCondition(compilationResults []CompilationResult) ConditionEvaluator {
 	}
 }
 
-func objectToResolveVal(r runtime.Object) (interface{}, error) {
-	if r == nil || reflect.ValueOf(r).IsNil() {
-		return nil, nil
-	}
-	v, err := admission.ConvertObjectToUnstructured(r)
-	if err != nil {
-		return nil, err
-	}
-	return v.Object, nil
-}
-
 // ForInput evaluates the compiled CEL expressions converting them into CELEvaluations
 // errors per evaluation are returned on the Evaluation object
 // runtimeCELCostBudget was added for testing purpose only. Callers should always use const RuntimeCELCostBudget from k8s.io/apiserver/pkg/apis/cel/config.go as input.
@@ -87,7 +75,7 @@ func (c *condition) ForInput(ctx context.Context, versionedAttr *admission.Versi
 	// if this activation supports composition, we will need the compositionCtx. It may be nil.
 	compositionCtx, _ := ctx.(CompositionContext)
 
-	activation, err := newActivation(compositionCtx, versionedAttr, request, inputs, namespace)
+	activation, err := newActivation(compositionCtx, versionedAttr, request, inputs, namespace, useSchemalessTypeRef())
 	if err != nil {
 		return nil, -1, err
 	}

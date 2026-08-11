@@ -183,7 +183,7 @@ func newNodeLifecycleController(ctx context.Context, controllerContext Controlle
 		controllerContext.InformerFactory.Apps().V1().DaemonSets(),
 		// node lifecycle controller uses existing cluster role from node-controller
 		client,
-		controllerContext.ComponentConfig.KubeCloudShared.NodeMonitorPeriod.Duration,
+		controllerContext.ComponentConfig.NodeLifecycleController.NodeMonitorPeriod.Duration,
 		controllerContext.ComponentConfig.NodeLifecycleController.NodeStartupGracePeriod.Duration,
 		controllerContext.ComponentConfig.NodeLifecycleController.NodeMonitorGracePeriod.Duration,
 		controllerContext.ComponentConfig.NodeLifecycleController.NodeEvictionRate,
@@ -749,11 +749,14 @@ func newPersistentVolumeProtectionController(ctx context.Context, controllerCont
 		return nil, err
 	}
 
-	pvpc := pvprotection.NewPVProtectionController(
+	pvpc, err := pvprotection.NewPVProtectionController(
 		klog.FromContext(ctx),
 		controllerContext.InformerFactory.Core().V1().PersistentVolumes(),
 		client,
 	)
+	if err != nil {
+		return nil, err
+	}
 	return newControllerLoop(func(ctx context.Context) {
 		pvpc.Run(ctx, 1)
 	}, controllerName), nil

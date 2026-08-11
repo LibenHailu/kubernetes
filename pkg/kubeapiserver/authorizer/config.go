@@ -34,7 +34,7 @@ import (
 	authorizationcel "k8s.io/apiserver/pkg/authorization/cel"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	versionedinformers "k8s.io/client-go/informers"
-	certinformersv1beta1 "k8s.io/client-go/informers/certificates/v1beta1"
+	certinformersv1 "k8s.io/client-go/informers/certificates/v1"
 	resourceinformers "k8s.io/client-go/informers/resource/v1"
 	"k8s.io/kubernetes/pkg/auth/authorizer/abac"
 	"k8s.io/kubernetes/pkg/auth/nodeidentifier"
@@ -79,7 +79,7 @@ type Config struct {
 // stopCh is used to shut down config reload goroutines when the server is shutting down.
 //
 // Note: the cel compiler construction depends on feature gates and the compatibility version to be initialized.
-func (config Config) New(ctx context.Context, serverID string) (authorizer.UnconditionalAuthorizer, authorizer.RuleResolver, error) {
+func (config Config) New(ctx context.Context, serverID string) (authorizer.Authorizer, authorizer.RuleResolver, error) {
 	if len(config.AuthorizationConfiguration.Authorizers) == 0 {
 		return nil, nil, fmt.Errorf("at least one authorization mode must be passed")
 	}
@@ -106,9 +106,9 @@ func (config Config) New(ctx context.Context, serverID string) (authorizer.Uncon
 			if utilfeature.DefaultFeatureGate.Enabled(features.DynamicResourceAllocation) {
 				slices = config.VersionedInformerFactory.Resource().V1().ResourceSlices()
 			}
-			var podCertificateRequestInformer certinformersv1beta1.PodCertificateRequestInformer
+			var podCertificateRequestInformer certinformersv1.PodCertificateRequestInformer
 			if utilfeature.DefaultFeatureGate.Enabled(features.PodCertificateRequest) {
-				podCertificateRequestInformer = config.VersionedInformerFactory.Certificates().V1beta1().PodCertificateRequests()
+				podCertificateRequestInformer = config.VersionedInformerFactory.Certificates().V1().PodCertificateRequests()
 			}
 			node.RegisterMetrics()
 			graph := node.NewGraph()

@@ -19,6 +19,7 @@ package e2enode
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -35,8 +36,6 @@ import (
 	"k8s.io/kubernetes/pkg/util/procfs"
 	e2epod "k8s.io/kubernetes/test/e2e/framework/pod"
 
-	"go.opentelemetry.io/otel/trace/noop"
-
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/runtime"
@@ -44,6 +43,7 @@ import (
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/component-base/featuregate"
+	"k8s.io/component-base/metrics/testutil"
 	internalapi "k8s.io/cri-api/pkg/apis"
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
 	remote "k8s.io/cri-client/pkg"
@@ -133,7 +133,7 @@ func getV1alpha1NodeDevices(ctx context.Context) (*kubeletpodresourcesv1alpha1.L
 	if err != nil {
 		return nil, fmt.Errorf("Error getting local endpoint: %w", err)
 	}
-	client, conn, err := podresources.GetV1alpha1Client(endpoint, defaultPodResourcesTimeout, defaultPodResourcesMaxSize)
+	client, conn, err := podresources.GetV1alpha1Client(ctx, endpoint, defaultPodResourcesTimeout, defaultPodResourcesMaxSize)
 	if err != nil {
 		return nil, fmt.Errorf("Error getting grpc client: %w", err)
 	}
@@ -152,7 +152,7 @@ func getV1NodeDevices(ctx context.Context) (*kubeletpodresourcesv1.ListPodResour
 	if err != nil {
 		return nil, fmt.Errorf("Error getting local endpoint: %w", err)
 	}
-	client, conn, err := podresources.GetV1Client(endpoint, defaultPodResourcesTimeout, defaultPodResourcesMaxSize)
+	client, conn, err := podresources.GetV1Client(ctx, endpoint, defaultPodResourcesTimeout, defaultPodResourcesMaxSize)
 	if err != nil {
 		return nil, fmt.Errorf("Error getting gRPC client: %w", err)
 	}
@@ -298,7 +298,11 @@ func getCRIClient(ctx context.Context) (internalapi.RuntimeService, internalapi.
 	const connectionTimeout = 2 * time.Minute
 	runtimeEndpoint := framework.TestContext.ContainerRuntimeEndpoint
 	useStreaming := utilfeature.DefaultFeatureGate.Enabled(features.CRIListStreaming)
-	r, err := remote.NewRemoteRuntimeService(ctx, runtimeEndpoint, connectionTimeout, noop.NewTracerProvider(), useStreaming)
+	r, err := remote.NewRemoteRuntimeServiceBuilder().
+		WithEndpoint(runtimeEndpoint).
+		WithConnectionTimeout(connectionTimeout).
+		WithUseStreaming(useStreaming).
+		Build(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -308,7 +312,11 @@ func getCRIClient(ctx context.Context) (internalapi.RuntimeService, internalapi.
 		//explicitly specified
 		imageManagerEndpoint = framework.TestContext.ImageServiceEndpoint
 	}
-	i, err := remote.NewRemoteImageService(ctx, imageManagerEndpoint, connectionTimeout, noop.NewTracerProvider(), useStreaming)
+	i, err := remote.NewRemoteImageServiceBuilder().
+		WithEndpoint(imageManagerEndpoint).
+		WithConnectionTimeout(connectionTimeout).
+		WithUseStreaming(useStreaming).
+		Build(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -640,4 +648,34 @@ func deletePodSyncAndWait(ctx context.Context, f *framework.Framework, podNS, po
 	deletePodSyncByName(ctx, f, podName)
 	waitForAllContainerRemoval(ctx, podName, podNS)
 	framework.Logf("deleted pod: %s/%s", podNS, podName)
+}
+
+func getKubeletMetrics(ctx context.Context) (e2emetrics.KubeletMetrics, error) {
+	ginkgo.By("Getting Kubelet metrics from the metrics API")
+	return e2emetrics.GrabKubeletMetricsWithoutProxy(ctx, nodeNameOrIP()+":10255", "/metrics")
+}
+
+// ErrMetricNotFound indicates that a metric family or matching sample was not found in scraped metrics.
+var ErrMetricNotFound = errors.New("metric or sample not found in kubelet metrics")
+
+// getCounterMetricValue extracts the counter metric value matching metricName and labels.
+// It returns ErrMetricNotFound if metricName or the matching label sample is not found in metrics.
+func getCounterMetricValue(metrics e2emetrics.KubeletMetrics, metricName string, labels map[string]string) (float64, error) {
+	samples, ok := metrics[metricName]
+	if !ok {
+		return 0, fmt.Errorf("%w: metric %q not found in kubelet metrics", ErrMetricNotFound, metricName)
+	}
+	for _, sample := range samples {
+		match := true
+		for k, v := range labels {
+			if val, ok := sample.Metric[testutil.LabelName(k)]; !ok || string(val) != v {
+				match = false
+				break
+			}
+		}
+		if match {
+			return float64(sample.Value), nil
+		}
+	}
+	return 0, fmt.Errorf("%w: metric %q with labels %v not found in kubelet metrics", ErrMetricNotFound, metricName, labels)
 }
